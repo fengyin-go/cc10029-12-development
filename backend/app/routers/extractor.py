@@ -1,4 +1,8 @@
-"""数据提取 DAG 拓扑接口：返回节点、连线图结构。"""
+"""数据提取 DAG 拓扑接口：返回节点、连线图结构。
+
+模板解析记录台账接口也挂在这里：数据提取读取受控模板版本数据集生成解析记录，
+只引用当前团队有权使用的模板版本，并拒绝生成重复结果。
+"""
 from __future__ import annotations
 
 import csv
@@ -6,11 +10,11 @@ import io
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.schemas import ActionPayload, ActionResult, EntryPayload, PageResult
-from app.services.extractor import ExtractorService
+from app.services.extractor import PARSE_FIELDS, ExtractorService, csv_cell
 
 router = APIRouter(prefix="/api/extractor", tags=["数据提取"])
 service = ExtractorService()
@@ -22,6 +26,39 @@ STATUSES = ["草稿", "待校验", "已启用", "已停用"]
 def get_graph() -> dict[str, Any]:
     """返回节点与边组成的 DAG 图数据。"""
     return service.get_graph()
+
+
+# ---------- 模板解析记录台账（必须声明在 /{entry_id} 之前） ----------
+
+@router.get("/parse-records", response_model=PageResult[dict])
+def list_parse_records(
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=200, ge=1, le=1000),
+) -> PageResult[dict]:
+    """模板解析记录台账：受控模板版本数据集的处理结果会反映到本台账。"""
+    filters = {
+        key: value.strip()
+        for key, value in request.query_params.items()
+        if key in PARSE_FIELDS and value.strip()
+    }
+    items, total = service.list_parse_records(filters=filters, page=page, size=size)
+    return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.post("/parse-records", response_model=ActionResult)
+def generate_parse_records(payload: dict[str, Any] = Body(default_factory=dict)) -> ActionResult:
+    """读取受控模板版本数据集生成模板解析记录；重复生成会被拒绝。"""
+    created, duplicates, usable = service.generate_parse_records(
+        account=payload.get("account"), team=payload.get("team"))
+    if not created:
+        if duplicates:
+            return ActionResult(ok=False, message="数据提取拒绝生成重复结果：模板解析记录已存在，只保留一份")
+        return ActionResult(ok=False, message="解析记录只能引用当前团队有权使用的模板版本，当前没有可引用的受控版本")
+    message = f"已读取受控模板版本数据集，生成 {len(created)} 条模板解析记录"
+    if duplicates:
+        message += f"，数据提取拒绝生成重复结果 {len(duplicates)} 条"
+    return ActionResult(ok=True, message=message)
 
 
 @router.get("/export")

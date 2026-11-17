@@ -20,7 +20,9 @@ export default defineConfig({
     open: false,
     strictPort: false,
     proxy: {
-      '/api': {
+      // 用正则限定 /api 边界：页面路由 /apigate 也以 /api 开头，
+      // 裸写 '/api' 会把采集API页面请求也代理到后端导致 404。
+      '^/api(/|$)': {
         target: proxyTarget,
         changeOrigin: true,
       },

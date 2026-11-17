@@ -616,6 +616,8 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
   '内置规则': '模板市场样例3',
   '使用次数': '模板市场样例3',
   '作者来源': '模板市场样例3'}],
+    "template_version": [],
+    "extractor_parse": [],
     "flowline": [{'id': 1,
   'status': '草稿',
   'pending': True,

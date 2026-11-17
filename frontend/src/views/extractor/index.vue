@@ -37,18 +37,56 @@
         </div>
       </form>
     </div>
+    <section class="parse-ledger" data-testid="parse-ledger">
+      <header class="page-head">
+        <div>
+          <h3>模板解析记录台账</h3>
+          <p class="page-desc">数据提取读取受控模板版本数据集生成解析记录，只引用当前团队有权使用的模板版本，重复生成会被拒绝。</p>
+        </div>
+        <div class="page-actions">
+          <label class="filter-item"><span>当前账户</span><input v-model="identity.account" data-testid="parse-account" placeholder="当前账户" /></label>
+          <label class="filter-item"><span>当前团队</span><input v-model="identity.team" data-testid="parse-team" placeholder="当前团队" /></label>
+          <button class="btn primary" type="button" data-testid="generate-parse-records" @click="generateParseRecords">生成模板解析记录</button>
+        </div>
+      </header>
+      <table class="data-table">
+        <thead>
+          <tr><th v-for="column in parseColumns" :key="column">{{ column }}</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="record in parseRecords" :key="String(record.id)" :data-testid="`parse-row-${record.id}`">
+            <td v-for="column in parseColumns" :key="column">{{ record[column] ?? '—' }}</td>
+          </tr>
+          <tr v-if="!parseRecords.length">
+            <td :colspan="parseColumns.length" class="empty-state">暂无模板解析记录，请先生成受控模板版本数据集后再生成解析记录</td>
+          </tr>
+        </tbody>
+      </table>
+      <footer class="page-foot">
+        <span>共 {{ parseTotal }} 条模板解析记录</span>
+        <span v-if="parseMessage" class="error-text" data-testid="parse-message">{{ parseMessage }}</span>
+      </footer>
+    </section>
     <footer class="page-foot"><span>{{ graph.nodes.length }} 个节点</span></footer>
   </section>
 </template>
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { request } from '@/api/client'
+import { useSessionStore } from '@/stores/session'
 const ENDPOINT = '/api/extractor'
 const columns = ["模板编号", "模板名称", "输入URL", "字段映射", "清洗规则", "输出格式", "版本号", "生效批次"]
 const actions = ["提交校验", "启用配置", "停用配置"]
 const statuses = ["草稿", "待校验", "已启用", "已停用"]
 const STATUS_COLORS: Record<string,string> = { '草稿':'#e2e8f0','待校验':'#fef3c7','已启用':'#d1fae5','已停用':'#fee2e2' }
 const nodeColor = (s: string) => STATUS_COLORS[s] || '#e2e8f0'
+const session = useSessionStore()
+// 模板解析记录台账：受控模板版本数据集的处理结果会反映到这里
+const parseColumns = ["记录编号", "模板编号", "模板名称", "版本号", "适用站点", "作者来源", "当前作者", "共享范围", "责任边界", "使用团队", "解析时间"]
+const parseRecords = ref<any[]>([])
+const parseTotal = ref(0)
+const parseMessage = ref('')
+const identity = ref({ account: session.operator, team: session.team })
 const graph = reactive<{nodes: any[], edges: any[]}>({ nodes: [], edges: [] })
 const nodePos = ref<Record<number,{x:number;y:number}>>({})
 const selectedNode = ref<any>(null)
@@ -78,5 +116,28 @@ async function submitCreate() {
   try { const res = await request(ENDPOINT, { method: 'POST', body: JSON.stringify({ values: createValues.value }) }); if(!res.ok) throw new Error('创建失败'); showCreate.value = false; await reload() } catch(e: any) { errorMessage.value = e.message }
 }
 function exportRows() { window.open(`${ENDPOINT}/export`, '_blank') }
-onMounted(reload)
+async function loadParseRecords() {
+  try {
+    const res = await request(`${ENDPOINT}/parse-records`)
+    const data = await res.json()
+    parseRecords.value = data.items || []
+    parseTotal.value = data.total ?? parseRecords.value.length
+  } catch (e) { parseMessage.value = '模板解析记录台账读取失败' }
+}
+async function generateParseRecords() {
+  parseMessage.value = ''
+  try {
+    const res = await request(`${ENDPOINT}/parse-records`, {
+      method: 'POST',
+      body: JSON.stringify({ account: identity.value.account, team: identity.value.team }),
+    })
+    const data = await res.json()
+    await loadParseRecords()
+    parseMessage.value = data.message || ''
+  } catch (e: any) { parseMessage.value = e.message || '生成模板解析记录失败' }
+}
+onMounted(() => { void reload(); void loadParseRecords() })
 </script>
+<style scoped>
+.parse-ledger { margin-top: 20px; border-top: 2px solid var(--border); padding-top: 8px; }
+</style>

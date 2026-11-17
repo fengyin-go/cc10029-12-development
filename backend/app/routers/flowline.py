@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.schemas import ActionPayload, ActionResult, EntryPayload, PageResult
-from app.services.flowline import FlowlineService
+from app.services.flowline import FlowlineService, csv_cell
 
 router = APIRouter(prefix="/api/flowline", tags=["采集流程"])
 service = FlowlineService()
